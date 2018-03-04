@@ -1,3 +1,4 @@
+
 /*ƒ*
  * Copyright 2015 IBM Corp. All Rights Reserved.
  *
@@ -21,6 +22,7 @@ require( 'dotenv' ).config( {silent: true} );
 var express = require( 'express' );  // app server
 var bodyParser = require( 'body-parser' );  // parser for post requests
 var watson = require( 'watson-developer-cloud' );  // watson sdk
+var watsonDiscovery = require('watson-developer-cloud/discovery/v1'); // watson discovery sdk
 
 // The following requires are needed for logging purposes
 var uuid = require( 'uuid' );
@@ -53,6 +55,14 @@ var conversation = watson.conversation( {
   version_date: '2016-07-11',
   version: 'v1'
 } );
+
+var discovery = new watsonDiscovery({
+  url: process.env.DISCOVERY_URL,
+  username: process.env.DISCOVERY_USERNAME || '<username>',
+  password: process.env.DISCOVERY_PASSWORD || '<password>',
+  version_date: process.env.VERSION_DATE,
+  version: 'v1'
+});
 
 // Endpoint to be call from the client side
 app.post( '/api/message', function(req, res) {
@@ -151,7 +161,43 @@ function updateMessage(res, input, response) {
         console.log( 'failure!' );
         console.log( e );
       } );
-    } else if ( response.output && response.output.text ) {
+    } else if (checkSentiment (response) ){
+      console.log('here');
+
+      // return discovery data
+      var version_date = process.env.VERSION_DATE;
+      var environment_id = process.env.ENVIRONMENT_ID;
+      var collection_id = process.env.COLLECTION_ID;
+
+      discovery.query({
+          version_date: version_date,
+          environment_id: environment_id,
+          collection_id: collection_id,
+          query: currency,
+          filter: 'publication_date>%3Dnow-1week',
+          count: 5
+        },
+        (err, data) => {
+          if (err) {
+            console.log("Error: ");
+            console.log(err);
+            return res.status(err.code || 500).json(err);
+          }
+          console.log(data);
+          if (data.results.length > 0) {
+            for(var i = 0; i < data.results.length; i++) {
+              response.output.text.push(data.results[i]); // keep this use-case agnostic;
+            }
+          } else {
+            response.output.text.push("I cannot find an answer to your question.");
+          }
+          // console.log(response);
+          return res.json(response);
+        }
+      );
+      return;
+    }
+     else if ( response.output && response.output.text ) {
       return res.json( response );
     }
   }
