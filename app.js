@@ -178,9 +178,10 @@ function updateMessage(res, input, response) {
           version_date: version_date,
           environment_id: environment_id,
           collection_id: collection_id,
-          query: currency,
-          filter: 'publication_date>%3Dnow-1week',
-          count: 5
+          natural_language_query: currency,
+          filter: '[publication_date>=now-1day, enriched_text.entities.relevance>=.8]',
+          aggregation: '[average(enriched_text.sentiment.document.score),term(enriched_text.sentiment.document.label,count:3)]',
+          count: 3
         },
         (err, data) => {
           if (err) {
@@ -194,42 +195,38 @@ function updateMessage(res, input, response) {
           var neg = 0;
           var neu = 0;
           if (data.results.length > 0 ) {
-            for(var i = 0; i < data.results.length; i++) {
-              for(var j = 0; j < data.results[i].enriched_text.entities.length; j++) {
-                sentiment += data.results[i].enriched_text.entities[j].sentiment.score;
-                apps++;
-
-                if (data.results[i].enriched_text.entities[j].sentiment.label === ('positive') ) {
-                  pos++;
-                } else if (data.results[i].enriched_text.entities[j].sentiment.label === ('negative') ) {
-                  neg++;
-                } else {
-                  neu++;
-                }
-              }
-            }
-            sentiment = (sentiment / apps);
 
             var sentiment_string = '';
-            if (sentiment > 0) {
-              if (sentiment > 0.5) {
-                sentiment_string = 'very positive';
-              } else {
-                sentiment_string = 'somewhat positive';
-              }
-            } else if (sentiment < 0) {
-              if (sentiment < -0.5) {
-                sentiment_string = 'very negative';
-              } else {
-                sentiment_string = 'somewhat negative';
-              }
-            } else {
-              sentiment_string = 'neutral'
-            }
             var params = [];
+            sentiment_string
+            if(data.aggregations[0].value > 0){
+              if(data.aggregations[0].value > .5){
+               sentiment_string = 'very positive';
+              }
+              else{
+               sentiment_string = 'somewhat positive';
+              }
+            }else if(data.aggregations[0].value < 0){
+              if(data.aggregations[0].value < -.5){
+                sentiment_string = 'very negative';
+              }
+              else{
+               sentiment_string = 'somewhat negative';
+              }           
+            } else{
+              sentiment_string = 'neutral';
+            }
+            for(var i = 0; i < data.aggregations[1].count; i++) {
+              if(data.aggregations[1].results[i].key === 'negative'){
+                neg = data.aggregations[1].results[i].matching_results;
+              }
+              else if(data.aggregations[1].results[i].key === 'positive'){
+                pos = data.aggregations[1].results[i].matching_results;
+              }
+            }
 
             params.push(sentiment_string);
-            params.push(apps);
+            params.push(data.matching_results);
             params.push(pos);
             params.push(neg);
 
@@ -242,10 +239,59 @@ function updateMessage(res, input, response) {
         }
       );
       return;
+    } else if (checkArticle (response) ){
+
+      // return discovery data
+      var version_date = process.env.VERSION_DATE;
+      var environment_id = process.env.ENVIRONMENT_ID;
+      var collection_id = process.env.COLLECTION_ID;
+
+      discovery.query({
+          version_date: version_date,
+          environment_id: environment_id,
+          collection_id: collection_id,
+          natural_language_query: currency,
+          filter: '[publication_date>=now-1day, enriched_text.entities.relevance>=.8]',
+          fields: '[title, url]',
+          count: 3
+        },
+        (err, data) => {
+          if (err) {
+            console.log("Error: ");
+            console.log(err);
+            return res.status(err.code || 500).json(err);
+          }
+          var apps = 0;
+          var sentiment = 0;
+          var pos = 0;
+          var neg = 0;
+          var neu = 0;
+          if (data.results.length > 0 ) {
+
+            var params = [];
+            params.push(data.results[0].title);
+            params.push(data.results[0].url);
+            params.push(data.results[1].title);
+            params.push(data.results[1].url);
+            params.push(data.results[2].title);
+            params.push(data.results[2].url);            
+
+            response.output.text = replaceParams(response.output.text, params);
+          } else {
+            response.output.text.push("I cannot find an answer to your question.");
+          }
+
+          return res.json(response);
+        }
+      );
+      return;
     }
-     else if ( response.output && response.output.text ) {
+      else if ( response.output && response.output.text ) {
       return res.json( response );
     }
+  }  
+   else if ( response.output && response.output.text ) {
+    return res.json( response );
   }
 }
 
@@ -358,6 +404,10 @@ function checkPrice(data) {
 
 function checkSentiment(data) {
   return data.intents && data.intents.length > 0 && data.intents[0].intent === 'sentiment';
+}
+
+function checkArticle(data) {
+  return data.intents && data.intents.length > 0 && data.intents[0].intent === 'view_articles';
 }
 
 function replaceParams(original, args) {
