@@ -123,13 +123,10 @@ function updateMessage(res, input, response) {
     } else if (currency === ('LTC')) {
       currency = 'litecoin';
     }
-    console.log(currency + " Recognized");
 
 
     if ( checkPrice( response ) ) {
-      console.log("Price Recognized");
       var options = getPriceURL( currency );
-      console.log(options);
 
       http.get( options, function(resp) {
         var chunkText = '';
@@ -140,7 +137,7 @@ function updateMessage(res, input, response) {
         resp.on( 'end', function() {
           var chunkJSON = JSON.parse( chunkText );
           var params = [];
-          console.log(chunkJSON);
+
           if ( chunkJSON[0].price_usd ) {
             var dollar = chunkJSON[0].price_usd;
             var string_dollar = dollar + '';
@@ -148,8 +145,17 @@ function updateMessage(res, input, response) {
             params.push( dollar_string );
 
             var percent = chunkJSON[0].percent_change_24h;
+            var up = true;
+            if ( percent < 0 ) {
+              up = false;
+            }
             var string_percent = percent + '';
             var percent_string = parseFloat(string_percent);
+            if ( up ) {
+              percent_string = 'up ' + percent_string;
+            } else {
+              percent_string = 'down ' + percent_string;
+            }
             params.push( percent_string );
 
             response.output.text = replaceParams( response.output.text, params );
@@ -162,7 +168,6 @@ function updateMessage(res, input, response) {
         console.log( e );
       } );
     } else if (checkSentiment (response) ){
-      console.log('here');
 
       // return discovery data
       var version_date = process.env.VERSION_DATE;
@@ -183,15 +188,56 @@ function updateMessage(res, input, response) {
             console.log(err);
             return res.status(err.code || 500).json(err);
           }
-          console.log(data);
-          if (data.results.length > 0) {
+          var apps = 0;
+          var sentiment = 0;
+          var pos = 0;
+          var neg = 0;
+          var neu = 0;
+          if (data.results.length > 0 ) {
             for(var i = 0; i < data.results.length; i++) {
-              response.output.text.push(data.results[i]); // keep this use-case agnostic;
+              for(var j = 0; j < data.results[i].enriched_text.entities.length; j++) {
+                sentiment += data.results[i].enriched_text.entities[j].sentiment.score;
+                apps++;
+
+                if (data.results[i].enriched_text.entities[j].sentiment.label === ('positive') ) {
+                  pos++;
+                } else if (data.results[i].enriched_text.entities[j].sentiment.label === ('negative') ) {
+                  neg++;
+                } else {
+                  neu++;
+                }
+              }
             }
+            sentiment = (sentiment / apps);
+
+            var sentiment_string = '';
+            if (sentiment > 0) {
+              if (sentiment > 0.5) {
+                sentiment_string = 'very positive';
+              } else {
+                sentiment_string = 'somewhat positive';
+              }
+            } else if (sentiment < 0) {
+              if (sentiment < -0.5) {
+                sentiment_string = 'very negative';
+              } else {
+                sentiment_string = 'somewhat negative';
+              }
+            } else {
+              sentiment_string = 'neutral'
+            }
+            var params = [];
+
+            params.push(sentiment_string);
+            params.push(apps);
+            params.push(pos);
+            params.push(neg);
+
+            response.output.text = replaceParams(response.output.text, params);
           } else {
             response.output.text.push("I cannot find an answer to your question.");
           }
-          // console.log(response);
+
           return res.json(response);
         }
       );
