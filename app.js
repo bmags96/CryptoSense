@@ -198,16 +198,16 @@ function updateMessage(res, input, response) {
 
             var sentiment_string = '';
             var params = [];
-            sentiment_string
+            console.log(data.aggregations[0].value);
             if(data.aggregations[0].value > 0){
-              if(data.aggregations[0].value > .5){
+              if(data.aggregations[0].value > .3){
                sentiment_string = 'very positive';
               }
               else{
                sentiment_string = 'somewhat positive';
               }
             }else if(data.aggregations[0].value < 0){
-              if(data.aggregations[0].value < -.5){
+              if(data.aggregations[0].value < -.3){
                 sentiment_string = 'very negative';
               }
               else{
@@ -253,7 +253,7 @@ function updateMessage(res, input, response) {
           natural_language_query: currency,
           filter: '[publication_date>=now-1day, enriched_text.entities.relevance>=.8]',
           fields: '[title, url]',
-          count: 3
+          count: 5
         },
         (err, data) => {
           if (err) {
@@ -275,8 +275,13 @@ function updateMessage(res, input, response) {
             params.push(data.results[1].url);
             params.push(data.results[2].title);
             params.push(data.results[2].url);            
+            params.push(data.results[3].title);
+            params.push(data.results[3].url);  
+            params.push(data.results[4].title);
+            params.push(data.results[4].url); 
 
             response.output.text = replaceParams(response.output.text, params);
+
           } else {
             response.output.text.push("I cannot find an answer to your question.");
           }
